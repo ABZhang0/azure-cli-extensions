@@ -22,7 +22,7 @@ logger = get_logger(__name__)
 uid_mapping = {}
 
 
-def restore(grafana_url, archive_file, components, http_headers, destination_datasources=None):
+def restore(grafana_url, archive_file, components, http_headers, remap_data_sources):
     try:
         tarfile.is_tarfile(name=archive_file)
     except IOError as e:
@@ -41,10 +41,10 @@ def restore(grafana_url, archive_file, components, http_headers, destination_dat
             tar.extractall(tmpdir)
             tar.close()
             _restore_components(grafana_url, restore_functions, tmpdir, components, http_headers,
-                                destination_datasources=destination_datasources)
+                                remap_data_sources=remap_data_sources)
 
 
-def _restore_components(grafana_url, restore_functions, tmpdir, components, http_headers, destination_datasources=None):
+def _restore_components(grafana_url, restore_functions, tmpdir, components, http_headers, remap_data_sources):
 
     if components:
         exts = [c[:-1] for c in components]
@@ -52,8 +52,8 @@ def _restore_components(grafana_url, restore_functions, tmpdir, components, http
         exts = list(restore_functions.keys())
 
     # to re-map data sources, create a mapping from source to destination workspace before transform the dashboards
-    if destination_datasources:
-        if "datasource" in exts:  # first let us skip datasource restoration
+    if remap_data_sources:
+        if "datasource" in exts:  # need to restore datasources first in order to generate the remapping
             exts.pop(exts.index("datasource"))
         datasource_backups = glob(f'{tmpdir}/**/*.datasource', recursive=True)
         if not datasource_backups:
@@ -61,17 +61,20 @@ def _restore_components(grafana_url, restore_functions, tmpdir, components, http
 
         source_datasources = []
         for file_path in datasource_backups:
+            restore_functions["datasource"](grafana_url, file_path, http_headers)
+
             with open(file_path, 'r', encoding="utf8") as f:
                 data = f.read()
             datasource = json.loads(data)
             source_datasources.append(datasource)
 
-        set_uid_mapping(source_datasources, destination_datasources)
+        _, content = send_grafana_get(f'{grafana_url}/api/datasources', http_headers)
+        set_uid_mapping(source_datasources, content)
 
     if "dashboard" in exts:  # dashboard restoration can't work if linked library panels don't exist
         exts.insert(0, "library_panel")
 
-    if "folder" in exts:  # make "folder" be the first to restore, so dashboards can be positioned under a right folder
+    if "folder" in exts:  # folders need to be restored before dashboards
         exts.insert(0, exts.pop(exts.index("folder")))
 
     for ext in exts:

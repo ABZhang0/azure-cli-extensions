@@ -248,18 +248,13 @@ def restore_grafana(cmd, grafana_name, archive_file, components=None, remap_data
         "content-type": "application/json",
         "authorization": "Bearer " + creds[1]
     }
+
     from .restore import restore
-
-    data_sources = []
-    if remap_data_sources:
-        data_sources = list_data_sources(cmd, grafana_name, resource_group_name,
-                                         subscription=None)
-
     restore(grafana_url=_get_grafana_endpoint(cmd, resource_group_name, grafana_name, subscription=None),
             archive_file=archive_file,
             components=components,
             http_headers=headers,
-            destination_datasources=data_sources)
+            remap_data_sources=remap_data_sources)
 
 
 def migrate_grafana(cmd, grafana_name, source_grafana_endpoint, source_grafana_token_or_api_key, dry_run=False,
